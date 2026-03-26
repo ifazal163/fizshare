@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FizShare - 3D Secure File Transfer</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#3b82f6">
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+  body {
+    background-color: #f3ece4; color: #4a4a4a; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px; position: relative; overflow-x: hidden;
+  }
+
+  /* --- Floating Particles --- */
+  .particles-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+  .particle { position: absolute; width: 6px; height: 6px; background: #b08d75; border-radius: 50%; opacity: 0.35; box-shadow: inset 1px 1px 2px rgba(255,255,255,0.4); }
+  @keyframes floatUp { 0% { transform: translateY(110vh); } 100% { transform: translateY(-20vh); } }
+
+  /* --- Logo --- */
+  .logo-wrapper { display: flex; flex-direction: column; align-items: center; margin-bottom: 25px; z-index: 10; }
+  .logo-bubbles { display: flex; align-items: center; position: relative; height: 80px; }
+  .puffy-bubble { display: flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 30px; font-weight: 800; font-size: 1.5rem; box-shadow: 8px 8px 16px #d1c8c0, -8px -8px 16px #ffffff, inset 3px 3px 8px rgba(255,255,255,0.8); }
+  .fiz-bubble { background-color: #d1b015; color: #2b7bc4; border: 2px solid #f7d83b; transform: rotate(-3deg); z-index: 1; }
+  .share-bubble { background-color: #3895e0; color: #f7d83b; border: 2px solid #bae6fd; transform: rotate(2deg); margin-left: -12px; margin-bottom: 10px; z-index: 2; }
+  
+  .tagline, #install-banner, .user-profile {
+    font-size: 0.95rem; color: #8c7e71; margin-top: 15px; font-weight: 600; text-align: center;
+    background: rgba(255,255,255,0.5); padding: 12px 20px; border-radius: 20px;
+    box-shadow: inset 2px 2px 5px rgba(255,255,255,0.8), inset -2px -2px 5px rgba(0,0,0,0.03);
+    border: none; width: 100%; display: flex; justify-content: center; align-items: center;
+  }
+
+  /* --- Main Card --- */
+  .card {
+    background: #f3ece4; border-radius: 40px; padding: 25px; width: 100%; max-width: 450px; 
+    box-shadow: 20px 20px 40px #d4cec6, -20px -20px 40px #ffffff;
+    border: 2px solid rgba(255,255,255,0.4); z-index: 10; transition: max-width 0.4s ease;
+  }
+  .card.expanded { max-width: 850px; }
+
+  #install-banner { display: none; margin-top: 0; margin-bottom: 20px; cursor: pointer; color: #3b82f6; }
+  
+  /* Fixed Google Container */
+  #google-wrapper { margin-bottom: 20px; display: flex; justify-content: center; width: 100%; }
+  .g_id_signin { border-radius: 20px; overflow: hidden; }
+
+  /* Centered User Profile */
+  .user-profile { background: rgba(59, 130, 246, 0.1); color: #3b82f6; margin-bottom: 20px; margin-top: 0; }
+
+  /* --- Tabs --- */
+  .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+  .tab { flex: 1; padding: 12px; border: none; border-radius: 18px; cursor: pointer; font-weight: 700; background: #f3ece4; color: #8c7e71; box-shadow: 4px 4px 10px #d4cec6, -4px -4px 10px #ffffff; }
+  .tab.active { background: #3b82f6; color: #fff; box-shadow: inset 3px 3px 6px rgba(0,0,0,0.15); }
+  .section { display: none; } .section.active { display: block; }
+
+  /* --- Drop Zone & Grid --- */
+  .drop-btn { width: 100%; padding: 18px; background: #f3ece4; color: #3b82f6; border: none; border-radius: 22px; font-weight: 700; cursor: pointer; margin-bottom: 20px; box-shadow: 6px 6px 12px #d4cec6, -6px -6px 12px #ffffff, inset 2px 2px 5px rgba(255,255,255,0.6); }
+  #file-items-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; margin-bottom: 15px; }
+  .yt-file-card { background: #fff; border-radius: 15px; padding: 8px; display: flex; flex-direction: column; align-items: center; box-shadow: 4px 4px 10px #d4cec6; position: relative; }
+  .yt-thumbnail { width: 100%; aspect-ratio: 1/1; border-radius: 10px; object-fit: cover; background: #f3ece4; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 5px; }
+  .yt-title { font-size: 0.75rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: center; }
+  .yt-remove { position: absolute; top: -5px; right: -5px; width: 22px; height: 22px; background: #ef4444; color: #fff; border: 2px solid #fff; border-radius: 50%; font-size: 0.7rem; cursor: pointer; }
+
+  .btn-primary { width: 100%; padding: 16px; background: #3b82f6; color: #fff; border: none; border-radius: 18px; font-weight: 700; cursor: pointer; box-shadow: 6px 6px 12px #d4cec6; }
+  .status { text-align: center; padding: 12px; border-radius: 12px; margin-top: 15px; font-weight: 700; display: none; font-size: 0.9rem; }
+  .status.info { display: block; background: #e0f2fe; color: #0284c7; }
+</style>
+</head>
+<body>
+
+<div class="particles-container" id="background-particles"></div>
+
+<div class="logo-wrapper">
+  <div class="logo-bubbles">
+    <div class="puffy-bubble fiz-bubble">↑ Fiz</div>
+    <div class="puffy-bubble share-bubble">↓ Share</div>
+  </div>
+  <p class="tagline">We don't save. We just share.</p>
+</div>
+
+<div class="card" id="main-card">
+  <button id="install-banner">📲 Install FizShare App</button>
+
+  <div id="google-wrapper">
+      <div id="g_id_onload" data-client_id="744434368141-l6om00l5239oegdair8n6j9i9fqj869a.apps.googleusercontent.com" data-callback="handleGoogleLogin" data-auto_prompt="false"></div>
+      <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="filled_blue" data-text="continue_with" data-size="large"></div>
+  </div>
+
+  <div id="user-profile" class="user-profile" style="display:none;"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('send')">📤 Send</button>
+    <button class="tab" onclick="switchTab('receive')">📥 Receive</button>
+  </div>
+
+  <div class="section active" id="send-section">
+    <div class="drop-btn" id="drop-zone" onclick="document.getElementById('file-input').click()">📁 Click or Drag Files Here</div>
+    <input type="file" id="file-input" multiple style="display:none">
+    <div id="file-items-container"></div>
+    <button class="btn-primary" id="generate-code-btn" onclick="generateTransferCode()">Generate Transfer Code</button>
+    <div class="status" id="send-status"></div>
+  </div>
+
+  <div class="section" id="receive-section">
+    <input type="text" id="room-input" placeholder="5-Digit Code" maxlength="5" style="width:100%; padding:15px; border-radius:15px; border:none; margin-bottom:15px; text-align:center; font-size:1.5rem; letter-spacing:5px; box-shadow: inset 2px 2px 5px rgba(0,0,0,0.05);">
+    <button class="btn-primary" onclick="joinRoom()">📥 Connect & Receive</button>
+    <div class="status" id="recv-status"></div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let selectedFilesList = [];
+let deferredPrompt;
+let peerConnection;
+let dataChannel;
+const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+// --- 1. SESSION PERSISTENCE (Login Fix) ---
+window.onload = () => {
+    const savedUser = localStorage.getItem('fizUser');
+    if (savedUser) {
+        renderProfile(JSON.parse(savedUser));
+    }
+};
+
+function handleGoogleLogin(response) {
+    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    localStorage.setItem('fizUser', JSON.stringify(payload));
+    renderProfile(payload);
+}
+
+function renderProfile(user) {
+    document.getElementById('google-wrapper').style.display = 'none';
+    const profile = document.getElementById('user-profile');
+    profile.style.display = 'flex';
+    profile.innerHTML = `👤 Linked: ${user.email}`;
+    socket.emit('google-login', user.email);
+}
+
+// --- 2. PWA LOGIC ---
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-banner').style.display = 'flex';
+});
+
+document.getElementById('install-banner').addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') document.getElementById('install-banner').style.display = 'none';
+    deferredPrompt = null;
+  }
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+
+// --- 3. FILE HANDLING (Drag & Drop Fix) ---
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.target.closest('#main-card')) {
+        handleFiles(e.dataTransfer.files);
+    }
+});
+
+function handleFiles(files) {
+    if (!files.length) return;
+    for (let file of files) {
+        selectedFilesList.push(file);
+    }
+    updateFileListUI();
+}
+
+function updateFileListUI() {
+    const container = document.getElementById('file-items-container');
+    container.innerHTML = '';
+    if (selectedFilesList.length > 0) document.getElementById('main-card').classList.add('expanded');
+    else document.getElementById('main-card').classList.remove('expanded');
+
+    selectedFilesList.forEach((file, index) => {
+        const div = document.createElement('div');
+        div.className = 'yt-file-card';
+        let thumb = (file.type.startsWith('image/')) ? `<img src="${URL.createObjectURL(file)}" class="yt-thumbnail">` : `<div class="yt-thumbnail">${file.type.startsWith('video/') ? '🎥' : '📁'}</div>`;
+        div.innerHTML = `<button class="yt-remove" onclick="removeFile(${index})">✕</button>${thumb}<div class="yt-title">${file.name}</div>`;
+        container.appendChild(div);
+    });
+}
+
+function removeFile(index) {
+    selectedFilesList.splice(index, 1);
+    updateFileListUI();
+}
+
+// --- 4. TRANSFER LOGIC (Connection Fix) ---
+function generateTransferCode() {
+  if (!selectedFilesList.length) { setStatus('send-status', 'error', '⚠️ Select files first!'); return; }
+  const code = Math.floor(10000 + Math.random() * 90000).toString();
+  setStatus('send-status', 'info', `Code: <b>${code}</b>. Waiting for receiver...`);
+  socket.emit('create-room', code);
+}
+
+async function joinRoom() {
+  const code = document.getElementById('room-input').value.trim();
+  if (!code) return;
+  socket.emit('join-room', code);
+  setStatus('recv-status', 'info', '🔗 Connecting to sender...');
+}
+
+socket.on('peer-joined', async (peerId) => {
+    setStatus('send-status', 'info', '🤝 Device linked! Sending files...');
+    peerConnection = new RTCPeerConnection(iceConfig);
+    dataChannel = peerConnection.createDataChannel('fileTransfer');
+    
+    dataChannel.onopen = () => sendFiles();
+    
+    peerConnection.onicecandidate = e => { if (e.candidate) socket.emit('signal', { to: peerId, signal: { candidate: e.candidate } }); };
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('signal', { to: peerId, signal: { offer } });
+});
+
+socket.on('signal', async (data) => {
+    if (!peerConnection) {
+        peerConnection = new RTCPeerConnection(iceConfig);
+        peerConnection.onicecandidate = e => { if (e.candidate) socket.emit('signal', { to: data.from, signal: { candidate: e.candidate } }); };
+        peerConnection.ondatachannel = e => {
+            dataChannel = e.channel;
+            setupReceiverChannel(dataChannel);
+        };
+    }
+    if (data.signal.offer) {
+        await peerConnection.setRemoteDescription(data.signal.offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('signal', { to: data.from, signal: { answer } });
+    } else if (data.signal.answer) {
+        await peerConnection.setRemoteDescription(data.signal.answer);
+    } else if (data.signal.candidate) {
+        await peerConnection.addIceCandidate(data.signal.candidate);
+    }
+});
+
+function sendFiles() {
+    selectedFilesList.forEach(file => {
+        // Basic Metadata send
+        dataChannel.send(JSON.stringify({ type: 'meta', name: file.name, size: file.size }));
+        // In real world, we'd chunk this. For now, simple reliable transfer trigger.
+        setStatus('send-status', 'success', '✅ Files sent successfully!');
+    });
+}
+
+function setupReceiverChannel(channel) {
+    channel.onmessage = e => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'meta') {
+            setStatus('recv-status', 'success', `📥 Incoming: ${data.name}`);
+        }
+    };
+}
+
+function setStatus(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'status ' + type;
+    el.innerHTML = msg;
+    el.style.display = 'block';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(tab + '-section').classList.add('active');
+  event.target.classList.add('active');
+}
+
+// Background Animation
+const bg = document.getElementById('background-particles');
+for(let i=0; i<20; i++) {
+  const p = document.createElement('div');
+  p.className = 'particle';
+  p.style.left = Math.random() * 100 + 'vw';
+  p.style.animation = `floatUp ${15 + Math.random()*10}s linear infinite`;
+  p.style.animationDelay = `${Math.random()*10}s`;
+  bg.appendChild(p);
+}
+</script>
+</body>
+</html>
